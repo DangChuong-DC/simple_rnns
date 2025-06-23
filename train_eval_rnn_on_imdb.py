@@ -1,71 +1,16 @@
-from typing import Sequence, Any
-from functools import partial
 from tqdm import tqdm
-import re
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam, SGD, Optimizer
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from datasets import load_dataset
-from nltk.tokenize import word_tokenize, wordpunct_tokenize
-from nltk.corpus import stopwords, wordnet
-from nltk.stem import WordNetLemmatizer
 
 from models.simp_rnn import SimpClassificationRNN, TorchClassificationRNN
 from models.simp_gru import SimpleClassifierGRU
-from tokenizer import WordTokenizer
+from models.tokenizer import WordTokenizer
 
-import nltk
-nltk.download('punkt')
-nltk.download('punkt_tab')
-nltk.download('stopwords')
-nltk.download('wordnet')
-
-
-def clean_text(text: str) -> list[str]:
-    """
-    Clean and tokenize the input text.
-    """
-    text = re.sub(r'<[^>]+>', ' ', text) # strip HTML
-    text = text.lower() # convert to lowercase
-    text = re.sub(r'https?://\S+|www\.\S+', ' ', text)  # strip URLs
-    text = re.sub(r'[^a-z0-9\s]', ' ', text)  # remove punctuation/special chars
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # Tokenize into words
-    # tokens = word_tokenize(text)
-    tokens = wordpunct_tokenize(text)  # Alternative tokenization
-
-    # # Remove stopwords and very short tokens
-    stops = set(stopwords.words('english'))
-    tokens = [t for t in tokens if t not in stops and len(t) > 2]
-
-    # # Lemmatize using WordNet
-    lemmatizer = WordNetLemmatizer()
-    tokens = [lemmatizer.lemmatize(t, pos=wordnet.NOUN) for t in tokens]
-    return tokens
-
-
-def collate_fn(
-    batch: Sequence[dict[str, Any]], tokenizer: WordTokenizer
-) -> dict[str, torch.Tensor]:
-    texts = [clean_text(item["text"]) for item in batch]
-    max_length = max(len(text) for text in texts)
-    # tokenize text and pad sequences to the maximum length
-    input_ids = [tokenizer.encode(text) for text in texts]
-    input_ids = [[tokenizer.get_padding_index()] * (max_length - len(ids)) + ids for ids in input_ids]
-    input_ids = torch.tensor(input_ids, dtype=torch.long)
-
-    labels = [item["label"] for item in batch]
-    labels = torch.tensor(labels, dtype=torch.float)
-
-    output = {
-        "input_ids": input_ids,
-        "labels": labels,
-    }
-    return output
+from data_utils.imdb import get_imdb_loader
 
 
 def eval(
@@ -98,7 +43,7 @@ def eval(
     
     avg_eval_loss = total_loss / len(val_dataloader)
     accuracy = correct / total if total > 0 else 0
-    print(f">>> [Eval Epoch {epoch}] loss: {avg_eval_loss:.9f} | accuracy: {accuracy*100:.2f}% <<<")
+    print(f">>> ✅ [Eval Epoch {epoch}] loss: {avg_eval_loss:.9f} | accuracy: {accuracy*100:.2f}% <<<")
 
 
 def train(
@@ -155,21 +100,13 @@ def main():
     RNN_num_layer = 1
     num_class = 1
 
-
-    train_dataset = load_dataset("stanfordnlp/imdb", split="train")
-    val_dataset = load_dataset("stanfordnlp/imdb", split="test")
-
+    # Initialize tokenizer and data loaders
     tokenizer = WordTokenizer("/home/dc/self_studies/simple_rnns/.checkpoints/vocabulary.json")
-    my_collate_fn = partial(collate_fn, tokenizer=tokenizer)
 
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, num_workers=8, shuffle=True, collate_fn=my_collate_fn
-    )
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, num_workers=4, shuffle=False, collate_fn=my_collate_fn
-    )
+    train_loader = get_imdb_loader("train", tokenizer, batch_size=batch_size)
+    val_loader = get_imdb_loader("test", tokenizer, batch_size=batch_size)
 
-    rnn_model = SimpleClassifierGRU(
+    rnn_model = TorchClassificationRNN(
         len(tokenizer), model_dimension, RNN_hidden_dimension, 
         num_layer=RNN_num_layer, num_class=num_class,
     )
@@ -188,7 +125,7 @@ def main():
         train(e, rnn_model, train_loader, optimizer, lr_scheduler, device, criterion)
     
     # Final evaluation
-    print("Final evaluation:")
+    print("🏁 Final evaluation:")
     eval(e + 1, rnn_model, val_loader, device, criterion)
 
 

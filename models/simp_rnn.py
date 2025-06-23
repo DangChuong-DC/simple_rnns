@@ -105,7 +105,7 @@ class TorchClassificationRNN(nn.Module):
         vocab_size: int,
         model_dim: int,
         rnn_hidden_size: int,
-        num_rnn_layer: int,
+        num_layer: int,
         num_class: int,
     ) -> None:
         super(TorchClassificationRNN, self).__init__()
@@ -114,7 +114,7 @@ class TorchClassificationRNN(nn.Module):
         self.rnn = nn.RNN(
             input_size=model_dim,
             hidden_size=rnn_hidden_size,
-            num_layers=num_rnn_layer,
+            num_layers=num_layer,
             batch_first=True,
             nonlinearity="tanh",
             bias=True,
